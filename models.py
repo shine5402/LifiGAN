@@ -4,6 +4,8 @@ import torch.nn as nn
 from torch.nn import Conv1d, ConvTranspose1d, AvgPool1d, Conv2d
 from torch.nn.utils import weight_norm, remove_weight_norm, spectral_norm
 from utils import init_weights, get_padding
+from mfd import MultiResolutionSTFTDiscriminatorImpl
+from stft_loss import MultiResolutionSTFTLossImpl
 
 LRELU_SLOPE = 0.1
 
@@ -252,6 +254,11 @@ class MultiScaleDiscriminator(torch.nn.Module):
         return y_d_rs, y_d_gs, fmap_rs, fmap_gs
 
 
+class MultiResolutionSTFTDiscriminator(MultiResolutionSTFTDiscriminatorImpl):
+    def __init__(self, h):
+        self.h = h
+        super().__init__(h.stftd_fft_sizes, h.stftd_hop_sizes, h.stftd_win_lengths)
+
 def feature_loss(fmap_r, fmap_g):
     loss = 0
     for dr, dg in zip(fmap_r, fmap_g):
@@ -274,6 +281,10 @@ def discriminator_loss(disc_real_outputs, disc_generated_outputs):
 
     return loss, r_losses, g_losses
 
+class MultiResolutionSTFTLoss(MultiResolutionSTFTLossImpl):
+    def __init__(self, h):
+        self.h = h
+        super().__init__(h.stftd_fft_sizes, h.stftd_hop_sizes, h.stftd_win_lengths)
 
 def generator_loss(disc_outputs):
     loss = 0
