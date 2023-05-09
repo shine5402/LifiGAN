@@ -15,7 +15,7 @@ from torch.nn.parallel import DistributedDataParallel
 from env import AttrDict, build_env
 from meldataset import MelDataset, mel_spectrogram, get_dataset_filelist
 from models import Generator, MultiPeriodDiscriminator, MultiScaleDiscriminator, MultiResolutionSTFTDiscriminator, \
-                   feature_loss, generator_loss, discriminator_loss, MultiResolutionSTFTLoss
+                   generator_loss, discriminator_loss, MultiResolutionSTFTLoss
 from utils import plot_spectrogram, scan_checkpoint, load_checkpoint, save_checkpoint
 from stft import TorchSTFT
 
@@ -107,7 +107,6 @@ def train(rank, a, h):
         sw = SummaryWriter(os.path.join(a.checkpoint_path, 'logs'))
 
     generator.train()
-    # mpd.train()
     mfd.train()
     msd.train()
 
@@ -128,9 +127,7 @@ def train(rank, a, h):
             y = torch.autograd.Variable(y.to(device, non_blocking=True))
             y_mel = torch.autograd.Variable(y_mel.to(device, non_blocking=True))
             y = y.unsqueeze(1)
-            # y_g_hat = generator(x)
             spec, phase = generator(x)
-
             y_g_hat = stft.inverse(spec, phase)
 
             y_g_hat_mel = mel_spectrogram(y_g_hat.squeeze(1), h.n_fft, h.num_mels, h.sampling_rate, h.hop_size, h.win_size,
@@ -138,12 +135,9 @@ def train(rank, a, h):
 
             optim_d.zero_grad()
 
-            # MPD
-            # y_df_hat_r, y_df_hat_g, _, _ = mpd(y, y_g_hat.detach())
-            # loss_disc_f, losses_disc_f_r, losses_disc_f_g = discriminator_loss(y_df_hat_r, y_df_hat_g)
             # MFD
             # MFD contains a sequence of sub discriminators, we need to plus all of them
-            y_df_hat_rs, y_df_hat_gs, _, _ = mfd(y, y_g_hat.detach())
+            y_df_hat_rs, y_df_hat_gs = mfd(y, y_g_hat.detach())
             loss_disc_f = None
             for y_df_hat_r, y_df_hat_g in zip(y_df_hat_rs, y_df_hat_gs):
                 loss_disc_f_local, losses_disc_f_r_local, losses_disc_f_g_local = discriminator_loss(y_df_hat_r, y_df_hat_g)
@@ -151,10 +145,9 @@ def train(rank, a, h):
                     loss_disc_f = loss_disc_f_local
                 else:
                     loss_disc_f += loss_disc_f_local
-            loss_disc_f /= len(y_df_hat_rs)
 
             # MSD
-            y_ds_hat_r, y_ds_hat_g, _, _ = msd(y, y_g_hat.detach())
+            y_ds_hat_r, y_ds_hat_g= msd(y, y_g_hat.detach())
             loss_disc_s, losses_disc_s_r, losses_disc_s_g = discriminator_loss(y_ds_hat_r, y_ds_hat_g)
 
             loss_disc_all = loss_disc_s + loss_disc_f
@@ -171,13 +164,10 @@ def train(rank, a, h):
             # stft loss
             sc_loss, mag_loss = stft_loss_calc(y_g_hat.squeeze(1), y.squeeze(1))
             loss_stft = sc_loss + mag_loss
+            loss_stft *= 5
 
-            # y_df_hat_r, y_df_hat_g, fmap_f_r, fmap_f_g = mpd(y, y_g_hat)
-            y_df_hat_rs, y_df_hat_gs, fmap_f_r, fmap_f_g = mfd(y, y_g_hat)
-            y_ds_hat_r, y_ds_hat_g, fmap_s_r, fmap_s_g = msd(y, y_g_hat)
-            # loss_fm_f = feature_loss(fmap_f_r, fmap_f_g)
-            # loss_fm_s = feature_loss(fmap_s_r, fmap_s_g)
-            # loss_gen_f, losses_gen_f = generator_loss(y_df_hat_g)
+            y_df_hat_rs, y_df_hat_gs = mfd(y, y_g_hat)
+            y_ds_hat_r, y_ds_hat_g = msd(y, y_g_hat)
             loss_gen_f = None
             for y_df_hat_g in y_df_hat_gs:
                 loss_gen_f_local, losses_gen_f_local = generator_loss(y_df_hat_g)
@@ -185,7 +175,7 @@ def train(rank, a, h):
                     loss_gen_f = loss_gen_f_local
                 else:
                     loss_gen_f += loss_gen_f_local
-            loss_gen_f /= len(y_df_hat_gs)
+
             loss_gen_s, losses_gen_s = generator_loss(y_ds_hat_g)
             loss_gen_all = loss_gen_s + loss_gen_f + loss_mel + loss_stft
 
@@ -207,13 +197,6 @@ def train(rank, a, h):
                     save_checkpoint(checkpoint_path,
                                     {'generator': (generator.module if h.num_gpus > 1 else generator).state_dict()})
                     checkpoint_path = "{}/do_{:08d}".format(a.checkpoint_path, steps)
-                    # save_checkpoint(checkpoint_path,
-                    #                 {'mpd': (mpd.module if h.num_gpus > 1
-                    #                                      else mpd).state_dict(),
-                    #                  'msd': (msd.module if h.num_gpus > 1
-                    #                                      else msd).state_dict(),
-                    #                  'optim_g': optim_g.state_dict(), 'optim_d': optim_d.state_dict(), 'steps': steps,
-                    #                  'epoch': epoch})
                     save_checkpoint(checkpoint_path,
                                     {'mfd': (mfd.module if h.num_gpus > 1
                                                          else mfd).state_dict(),
@@ -226,6 +209,7 @@ def train(rank, a, h):
                 if steps % a.summary_interval == 0:
                     sw.add_scalar("training/gen_loss_total", loss_gen_all, steps)
                     sw.add_scalar("training/mel_spec_error", mel_error, steps)
+                    sw.add_scalar("training/stft_loss", loss_stft, steps)
 
                 # Validation
                 if steps % a.validation_interval == 0:  # and steps != 0:
@@ -282,7 +266,7 @@ def main():
     parser.add_argument('--input_mels_dir', default='ft_dataset')
     parser.add_argument('--input_training_file', default='LJSpeech-1.1/training.txt')
     parser.add_argument('--input_validation_file', default='LJSpeech-1.1/validation.txt')
-    parser.add_argument('--checkpoint_path', default='cp_hifigan')
+    parser.add_argument('--checkpoint_path', default='cp_lifigan')
     parser.add_argument('--config', default='')
     parser.add_argument('--training_epochs', default=2000, type=int)
     parser.add_argument('--stdout_interval', default=5, type=int)

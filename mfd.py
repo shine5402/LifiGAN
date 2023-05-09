@@ -135,16 +135,13 @@ class STFTDiscriminator(torch.nn.Module):
         self.apply(_apply_weight_norm)
 
     def forward(self, x):
-        fmap = []
         x = stft(x, self.fft_size, self.shift_size, self.win_length, self.window)
         outs = []
         for f in self.layers:
             x = f(x)
             outs += [x]
-            fmap.append(x)
 
-        fmap.append(x)
-        return outs, fmap
+        return outs
 
 
 class MultiResolutionSTFTDiscriminatorImpl(torch.nn.Module):
@@ -175,16 +172,12 @@ class MultiResolutionSTFTDiscriminatorImpl(torch.nn.Module):
         x_hat = x_hat.squeeze(1)
 
         x_outs = []
-        x_fmaps = []
         x_hat_outs = []
-        x_hat_fmaps = []
 
         for f in self.stft_discriminator:
-            x_out, x_fmap = f(x)
+            x_out = f(x)
             x_outs.append(x_out)
-            x_fmaps.append(x_fmap)
-            x_hat_out, x_hat_fmap = f(x_hat)
+            x_hat_out = f(x_hat)
             x_hat_outs.append(x_hat_out)
-            x_hat_fmaps.append(x_hat_fmap)
 
-        return x_outs, x_hat_outs, x_fmaps, x_hat_fmaps
+        return x_outs, x_hat_outs

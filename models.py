@@ -146,8 +146,6 @@ class DiscriminatorP(torch.nn.Module):
         self.conv_post = norm_f(Conv2d(1024, 1, (3, 1), 1, padding=(1, 0)))
 
     def forward(self, x):
-        fmap = []
-
         # 1d to 2d
         b, c, t = x.shape
         if t % self.period != 0: # pad first
@@ -159,12 +157,10 @@ class DiscriminatorP(torch.nn.Module):
         for l in self.convs:
             x = l(x)
             x = F.leaky_relu(x, LRELU_SLOPE)
-            fmap.append(x)
         x = self.conv_post(x)
-        fmap.append(x)
         x = torch.flatten(x, 1, -1)
 
-        return x, fmap
+        return x
 
 
 class MultiPeriodDiscriminator(torch.nn.Module):
@@ -181,17 +177,13 @@ class MultiPeriodDiscriminator(torch.nn.Module):
     def forward(self, y, y_hat):
         y_d_rs = []
         y_d_gs = []
-        fmap_rs = []
-        fmap_gs = []
         for i, d in enumerate(self.discriminators):
-            y_d_r, fmap_r = d(y)
-            y_d_g, fmap_g = d(y_hat)
+            y_d_r = d(y)
+            y_d_g = d(y_hat)
             y_d_rs.append(y_d_r)
-            fmap_rs.append(fmap_r)
             y_d_gs.append(y_d_g)
-            fmap_gs.append(fmap_g)
 
-        return y_d_rs, y_d_gs, fmap_rs, fmap_gs
+        return y_d_rs, y_d_gs
 
 
 class DiscriminatorS(torch.nn.Module):
@@ -210,16 +202,13 @@ class DiscriminatorS(torch.nn.Module):
         self.conv_post = norm_f(Conv1d(1024, 1, 3, 1, padding=1))
 
     def forward(self, x):
-        fmap = []
         for l in self.convs:
             x = l(x)
             x = F.leaky_relu(x, LRELU_SLOPE)
-            fmap.append(x)
         x = self.conv_post(x)
-        fmap.append(x)
         x = torch.flatten(x, 1, -1)
 
-        return x, fmap
+        return x
 
 
 class MultiScaleDiscriminator(torch.nn.Module):
@@ -238,35 +227,21 @@ class MultiScaleDiscriminator(torch.nn.Module):
     def forward(self, y, y_hat):
         y_d_rs = []
         y_d_gs = []
-        fmap_rs = []
-        fmap_gs = []
         for i, d in enumerate(self.discriminators):
             if i != 0:
                 y = self.meanpools[i-1](y)
                 y_hat = self.meanpools[i-1](y_hat)
-            y_d_r, fmap_r = d(y)
-            y_d_g, fmap_g = d(y_hat)
+            y_d_r = d(y)
+            y_d_g = d(y_hat)
             y_d_rs.append(y_d_r)
-            fmap_rs.append(fmap_r)
             y_d_gs.append(y_d_g)
-            fmap_gs.append(fmap_g)
 
-        return y_d_rs, y_d_gs, fmap_rs, fmap_gs
-
+        return y_d_rs, y_d_gs
 
 class MultiResolutionSTFTDiscriminator(MultiResolutionSTFTDiscriminatorImpl):
     def __init__(self, h):
         self.h = h
         super().__init__(h.stftd_fft_sizes, h.stftd_hop_sizes, h.stftd_win_lengths)
-
-def feature_loss(fmap_r, fmap_g):
-    loss = 0
-    for dr, dg in zip(fmap_r, fmap_g):
-        for rl, gl in zip(dr, dg):
-            loss += torch.mean(torch.abs(rl - gl))
-
-    return loss*2
-
 
 def discriminator_loss(disc_real_outputs, disc_generated_outputs):
     loss = 0
