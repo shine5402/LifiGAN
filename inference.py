@@ -5,6 +5,7 @@ import os
 import argparse
 import json
 import torch
+import time
 from scipy.io.wavfile import write
 from env import AttrDict
 from meldataset import mel_spectrogram, MAX_WAV_VALUE, load_wav
@@ -38,7 +39,8 @@ def scan_checkpoint(cp_dir, prefix):
 
 def inference(a):
     generator = Generator(h).to(device)
-    stft = TorchSTFT(filter_length=h.gen_istft_n_fft, hop_length=h.gen_istft_hop_size, win_length=h.gen_istft_n_fft).to(device)
+    stft = TorchSTFT(filter_length=h.gen_istft_n_fft, hop_length=h.gen_istft_hop_size, win_length=h.gen_istft_n_fft,
+                     window_device=a.device).to(device)
 
     state_dict_g = load_checkpoint(a.checkpoint_file, device)
     generator.load_state_dict(state_dict_g['generator'])
@@ -50,8 +52,13 @@ def inference(a):
     generator.eval()
     generator.remove_weight_norm()
     with torch.no_grad():
-        for i, filname in enumerate(filelist):
-            wav, sr = load_wav(os.path.join(a.input_wavs_dir, filname))
+        ratio_sum = 0.
+        ratio_count = 0
+        for i, filename in enumerate(filelist):
+            wav, sr = load_wav(os.path.join(a.input_wavs_dir, filename))
+            wav_time = wav.size / sr
+            start_time = time.time()
+
             wav = wav / MAX_WAV_VALUE
             wav = torch.FloatTensor(wav).to(device)
             x = get_mel(wav.unsqueeze(0))
@@ -61,9 +68,20 @@ def inference(a):
             audio = audio * MAX_WAV_VALUE
             audio = audio.cpu().numpy().astype('int16')
 
-            output_file = os.path.join(a.output_dir, os.path.splitext(filname)[0] + '_generated.wav')
+            end_time = time.time()
+            inference_time = end_time - start_time
+            ratio = wav_time / inference_time
+            ratio_sum += ratio
+            ratio_count += 1
+
+            print('{}: wav_time={}, infer_time={}, ratio={}'.format(filename, wav_time,
+                                                                    inference_time, ratio))
+
+            output_file = os.path.join(a.output_dir, os.path.splitext(filename)[0] + '_generated.wav')
             write(output_file, h.sampling_rate, audio)
-            print(output_file)
+            print('Saved to: {}'.format(output_file))
+
+        print('Final ratio: {}x realtime.'.format(ratio_sum / ratio_count))
 
 
 def main():
@@ -73,6 +91,7 @@ def main():
     parser.add_argument('--input_wavs_dir', default='test_files')
     parser.add_argument('--output_dir', default='generated_files')
     parser.add_argument('--checkpoint_file', required=True)
+    parser.add_argument('--device', default='cuda')
     a = parser.parse_args()
 
     config_file = os.path.join(os.path.split(a.checkpoint_file)[0], 'config.json')
@@ -85,11 +104,14 @@ def main():
 
     torch.manual_seed(h.seed)
     global device
-    if torch.cuda.is_available():
+    if torch.cuda.is_available() and a.device == 'cuda':
         torch.cuda.manual_seed(h.seed)
         device = torch.device('cuda')
+        print('Using GPU to inference.')
     else:
         device = torch.device('cpu')
+        torch.manual_seed(h.seed)
+        print('Using CPU to inference.')
 
     inference(a)
 

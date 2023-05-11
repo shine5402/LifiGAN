@@ -179,12 +179,14 @@ class STFT(torch.nn.Module):
 
 
 class TorchSTFT(torch.nn.Module):
-    def __init__(self, filter_length=800, hop_length=200, win_length=800, window='hann'):
+    def __init__(self, filter_length=800, hop_length=200, win_length=800, window='hann', window_device='cuda'):
         super().__init__()
         self.filter_length = filter_length
         self.hop_length = hop_length
         self.win_length = win_length
-        self.window = torch.from_numpy(get_window(window, win_length, fftbins=True).astype(np.float32)).cuda()
+        self.window = torch.from_numpy(get_window(window, win_length, fftbins=True).astype(np.float32))
+        if window_device == 'cuda':
+            self.window = self.window.cuda()
 
     def transform(self, input_data):
         forward_transform = torch.stft(
