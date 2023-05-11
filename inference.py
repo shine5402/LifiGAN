@@ -46,6 +46,9 @@ def inference(a):
     generator.load_state_dict(state_dict_g['generator'])
 
     filelist = os.listdir(a.input_wavs_dir)
+    filelist = list(filter(lambda f: f.endswith(".wav"), filelist))
+
+    print(filelist)
 
     os.makedirs(a.output_dir, exist_ok=True)
 

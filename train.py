@@ -59,6 +59,11 @@ def train(rank, a, h):
         steps = state_dict_do['steps'] + 1
         last_epoch = state_dict_do['epoch']
 
+    print('Parameter count:')
+    print(sum(p.numel() for p in generator.parameters()))
+    print(sum(p.numel() for p in mfd.parameters()))
+    print(sum(p.numel() for p in msd.parameters()))
+
     if h.num_gpus > 1:
         generator = DistributedDataParallel(generator, device_ids=[rank]).to(device)
         # mpd = DistributedDataParallel(mpd, device_ids=[rank]).to(device)
