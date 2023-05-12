@@ -19,7 +19,7 @@ from models import Generator, MultiPeriodDiscriminator, MultiScaleDiscriminator,
 from utils import plot_spectrogram, scan_checkpoint, load_checkpoint, save_checkpoint
 from stft import TorchSTFT
 
-# torch.backends.cudnn.benchmark = True
+torch.backends.cudnn.benchmark = True
 
 
 def train(rank, a, h):
