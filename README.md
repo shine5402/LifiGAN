@@ -1,7 +1,7 @@
 # LiFi-GAN: A Lightweight HiFi-GAN Variant Incorporating (Inverse) Short-time Fourier Transform
 
 ## Description
-This repo contains code implementing my graduation project for undergraduate degree.
+This repo contains code implementing my graduation thesis for undergraduate degree.
 
 In short, LiFi-GAN is a [HiFi-GAN V1](https://arxiv.org/abs/2010.05646) variant, with a lighter V1-C8C8I generator from [iSTFTNet](https://arxiv.org/abs/2203.02395) and a lighter MFD discriminator from [Basis-MelGAN](https://arxiv.org/abs/2106.13419). It also uses STFT loss from Basis-MelGAN and dropped out feature loss as Basis-MelGAN mentioning it can make the network failing to converge.
 In our testing, this model can have ~50% faster inference speed and ~50% faster training speed, while maintaining a pretty good audio quality.
